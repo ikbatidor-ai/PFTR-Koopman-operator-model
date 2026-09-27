@@ -10,11 +10,11 @@ gam = 25
 B = 0.5
 beta = 2.5
 yw = 1
-tau_final = 1
+tau_final = 20
 
 n = 250
 eta = np.linspace(0, 1, n)
-dx = eta[1] - eta[0]
+deta = eta[1] - eta[0]
 
 def transient_sys(tau, y, Da):
 
@@ -30,17 +30,24 @@ def transient_sys(tau, y, Da):
     y1 = np.zeros(n)
     y2 = np.zeros(n)
 
-    #definenlet boundary conditions
-    y1[0] = 1
-    y2[0] = 1
-
     #define kinterior dynamic states
     y1[1:n-1] = y1_dyn
     y2[1:n-1] = y2_dyn
 
+    #define inlet boundary conditions
+    y1[0] = (
+        (Pem*2*deta + 4*y1[1] - y1[2])/
+        (3 + Pem*2*deta)
+    )
+    y2[0] = (
+        (Pem*2*deta + 4*y2[1] - y2[2])/
+        (3 + Peh*2*deta)
+    )
+
     #define outlet boundary conditions
     y1[-1] = y1[-2]
     y2[-1] = y2[-2]
+
     #define rhs vector
     dydtau = np.zeros(2*(n-2))
 
@@ -54,18 +61,18 @@ def transient_sys(tau, y, Da):
         dy1dtau[i-1] = (
             (1/Pem)
             * (y1[i+1] - 2*y1[i] + y1[i-1])
-            / dx**2
+            / deta**2
             - (y1[i+1] - y1[i-1])
-            / (2*dx)
+            / (2*deta)
             - Da*y1[i]*np.exp(gam - gam/y2[i])
         )
 
         dy2dtau[i-1] = (
             (1/Peh)
             * (y2[i+1] - 2*y2[i] + y2[i-1])
-            / dx**2
+            / deta**2
             - (y2[i+1] - y2[i-1])
-            / (2*dx)
+            / (2*deta)
             - beta*(y2[i] - yw)
             + B*Da*y1[i]*np.exp(gam - gam/y2[i])
         )
@@ -82,7 +89,7 @@ y0 = np.concatenate([
 ])
 
 #initialize Da_lst and solution lst
-Da_lst= np.linspace(0.1,0.3,10)
+Da_lst= np.linspace(0.1,0.3,20)
 transient_solutions = []
 
 #define evaluation time 
@@ -132,7 +139,7 @@ for j in range(len(Da_lst)):
 
     axes[0].set_title(rf"$y_1(\eta,\tau)$ at $\eta={eta[i]:.2f}$")
     axes[0].set_ylabel(r"$y_1$")
-    axes[1].set_xlabel(r"$\tau$")
+    axes[0].set_xlabel(r"$\tau$")
 
     #plotting for y2
     axes[1].plot(
