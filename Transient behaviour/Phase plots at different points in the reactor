@@ -1,0 +1,160 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.integrate import solve_ivp
+from pathlib import Path
+
+# --- Constants ---
+Pem = 5
+Peh = 5
+gam = 25
+B = 0.5
+beta = 2.5
+yw = 1
+tau_final = 20
+
+n = 250
+eta = np.linspace(0, 1, n)
+deta = eta[1] - eta[0]
+
+def transient_sys(tau, y, Da):
+
+    """
+    This function evaluates the transient system for a specified Da value.
+    Returns the rhs vector of the pde system (dependent on time)
+    """
+    #extract dynamic states (variables that change with time)
+    y1_dyn = y[:n-2]
+    y2_dyn = y[n-2:]
+
+    #reconstruct spatial vectors 
+    y1 = np.zeros(n)
+    y2 = np.zeros(n)
+
+    #define kinterior dynamic states
+    y1[1:n-1] = y1_dyn
+    y2[1:n-1] = y2_dyn
+
+    #define inlet boundary conditions
+    y1[0] = (
+        (Pem*2*deta + 4*y1[1] - y1[2])/
+        (3 + Pem*2*deta)
+    )
+    y2[0] = (
+        (Pem*2*deta + 4*y2[1] - y2[2])/
+        (3 + Peh*2*deta)
+    )
+
+    #define outlet boundary conditions
+    y1[-1] = (4/3)*y1[-2] - (1/3)*y1[-3]
+    y2[-1] = (4/3)*y2[-2] - (1/3)*y2[-3]
+
+    #define rhs vector
+    dydtau = np.zeros(2*(n-2))
+
+    #split rhs vector for easier handling
+    dy1dtau = dydtau[:n-2]
+    dy2dtau = dydtau[n-2:]
+
+    #discretize pde in interior nodes
+    for i in range(1, n-1):
+
+        dy1dtau[i-1] = (
+            (1/Pem)
+            * (y1[i+1] - 2*y1[i] + y1[i-1])
+            / deta**2
+            - (y1[i+1] - y1[i-1])
+            / (2*deta)
+            - Da*y1[i]*np.exp(gam - gam/y2[i])
+        )
+
+        dy2dtau[i-1] = (
+            (1/Peh)
+            * (y2[i+1] - 2*y2[i] + y2[i-1])
+            / deta**2
+            - (y2[i+1] - y2[i-1])
+            / (2*deta)
+            - beta*(y2[i] - yw)
+            + B*Da*y1[i]*np.exp(gam - gam/y2[i])
+        )
+
+    return dydtau
+
+#uniform initial concentration in the reactor
+y1_dyn_initial = np.ones(n-2)
+y2_dyn_initial = np.ones(n-2)
+
+y0 = np.concatenate([
+    y1_dyn_initial,
+    y2_dyn_initial
+])
+
+#initialize Da_lst and solution lst
+Da_lst = np.linspace(0.16, 0.18, 10)
+transient_solutions = []
+
+#define evaluation time 
+t_eval = np.linspace(0, tau_final, 1000)
+
+
+for Da in Da_lst:
+    print(f"Current Da = {Da}")
+    sol = solve_ivp(
+        fun=transient_sys,
+        t_span=(0, tau_final),
+        y0=y0,
+        t_eval=t_eval,
+        args=(Da,),
+        method="BDF" #problem is stiff
+    )
+
+    transient_solutions.append(sol)
+    print(f"Solutions for Da = {Da} found!")
+
+
+
+#reaction axial length is controlled by eta parameter [0,1], and is discretized by 250
+#nodes
+
+eta_plot_lst = [0.1, 0.2, 0.4, 0.6, 0.8, 0.9]
+for eta_target in eta_plot_lst:
+
+    i = np.argmin(np.abs(eta - eta_target))
+
+    #initialize plots
+    fig = plt.figure()
+
+    for j in range(len(Da_lst)):
+
+        sol = transient_solutions[j]
+
+        #slicing here comes from the offset between yi_dyn and 
+        #physical node (which includes IC at the start and BC at the end)
+        y1_transient = sol.y[i-1, :] 
+        y2_transient = sol.y[n-2+ (i-1),:]
+
+        Da = Da_lst[j] #for labelling 
+
+        #plotting for y1
+        plt.plot(
+            y1_transient,
+            y2_transient,
+            label=rf"$Da={Da:.3f}$"
+        )
+
+        plt.xlabel(rf"$y_1$")
+        plt.ylabel(rf"$y_2$")
+        plt.title(rf"Phase Plot of dimensionless concentration, $y_1$, and dimensionless temperature, $y_2$" 
+                    + "\n" + rf"at $\eta={eta[i]:.2f}$")
+        plt.legend()
+
+    fig.tight_layout()
+
+    #save plots using path
+    file_path = (
+        Path.cwd()
+        / 'Transient behaviour'
+        / 'Phase plots'
+        / f'Phase plot eta={eta[i]:.2f}.png'
+    )
+
+    plt.savefig(file_path, dpi=300, bbox_inches='tight', transparent=False)

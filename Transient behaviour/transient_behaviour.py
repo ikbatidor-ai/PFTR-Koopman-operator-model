@@ -40,13 +40,13 @@ def transient_sys(tau, y, Da):
         (3 + Pem*2*deta)
     )
     y2[0] = (
-        (Pem*2*deta + 4*y2[1] - y2[2])/
+        (Peh*2*deta + 4*y2[1] - y2[2])/
         (3 + Peh*2*deta)
     )
 
     #define outlet boundary conditions
-    y1[-1] = y1[-2]
-    y2[-1] = y2[-2]
+    y1[-1] = (4/3)*y1[-2] - (1/3)*y1[-3]
+    y2[-1] = (4/3)*y2[-2] - (1/3)*y2[-3]
 
     #define rhs vector
     dydtau = np.zeros(2*(n-2))
@@ -88,78 +88,137 @@ y0 = np.concatenate([
     y2_dyn_initial
 ])
 
-#initialize Da_lst and solution lst
-Da_lst= np.linspace(0.1,0.3,20)
-transient_solutions = []
-
-#define evaluation time 
-t_eval = np.linspace(0, tau_final, 1000)
-
-
-for Da in Da_lst:
-    print(f"Current Da = {Da}")
-    sol = solve_ivp(
-        fun=transient_sys,
-        t_span=(0, tau_final),
-        y0=y0,
-        t_eval=t_eval,
-        args=(Da,),
-        method="BDF" #problem is stiff
-    )
-
-    transient_solutions.append(sol)
-    print(f"Solutions for Da = {Da} found!")
+def system(check_err=False):
+    """
+    This function calls the solve_ivp function and produces the time-dependant
+    y1 and y2 profiles.
+    
+    If check_err is set to true, solve_ivp is called with varying tolerances in order 
+    to calculate the numerical convergence of the system 
+    """
 
 
+    #define evaluation time 
+    t_eval = np.linspace(0, tau_final, 1000)
 
-#reaction axial length is controlled by eta parameter [0,1], and is discretized by 250
-#nodes
-i = n // 2 #change integer division to see results at different points in the reactor.
 
-#initialize plots
-fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+    if check_err == True:
+        #initialize Da_lst 
+        Da_lst= np.linspace(0.16,0.18,5) #less Da values to save time
 
-for j in range(len(Da_lst)):
+        #solution list 
+        sol_lst_err_comparison= []
 
-    sol = transient_solutions[j]
+        #tolerance lists
+        rtol_lst = [1e-2, 1e-4, 1e-6, 1e-8, 1e-10]
+        atol_lst = [1e-4, 1e-6, 1e-8, 1e-10, 1e-12]
 
-    #slicing here comes from the offset between yi_dyn and 
-    #physical node (which includes IC at the start and BC at the end)
-    y1_transient = sol.y[i-1, :] 
-    y2_transient = sol.y[n-2+ (i-1),:]
+        for tol in range(len(rtol_lst)):
+            rtol = rtol_lst[tol]
+            atol = atol_lst[tol]
 
-    Da = Da_lst[j] #for labelling 
+            for Da in Da_lst:
+                print(f"Current Da = {Da}")
+                sol = solve_ivp(
+                    fun=transient_sys,
+                    t_span=(0, tau_final),
+                    y0=y0,
+                    t_eval=t_eval,
+                    args=(Da,),
+                    method="BDF", #problem is stiff,
+                    rtol = rtol,
+                    atol = atol
+                )   
 
-    #plotting for y1
-    axes[0].plot(
-        sol.t,
-        y1_transient,
-        label=rf"$Da={Da:.3f}$"
-    )
+                sol_lst_err_comparison.append(sol)
+                print(f"Solutions for Da = {Da} found!")
 
-    axes[0].set_title(rf"$y_1(\eta,\tau)$ at $\eta={eta[i]:.2f}$")
-    axes[0].set_ylabel(r"$y_1$")
-    axes[0].set_xlabel(r"$\tau$")
+        
 
-    #plotting for y2
-    axes[1].plot(
-        sol.t,
-        y2_transient,
-        label=rf"$Da={Da:.3f}$"
-    )
+    else:
+        #initialize Da_lst and solution lst
+        Da_lst= np.linspace(0.16,0.18,10) #more Da values 
+        transient_solutions = []
 
-    axes[1].set_title(rf"$y_2(\eta,\tau)$ at $\eta={eta[i]:.2f}$")
-    axes[1].set_ylabel(r"$y_2$")
-    axes[1].set_xlabel(r"$\tau$")
+        for Da in Da_lst:
+            print(f"Current Da = {Da}")
+            sol = solve_ivp(
+                fun=transient_sys,
+                t_span=(0, tau_final),
+                y0=y0,
+                t_eval=t_eval,
+                args=(Da,),
+                method="BDF" #problem is stiff
+            )
 
-plt.legend()
+            transient_solutions.append(sol)
+            print(f"Solutions for Da = {Da} found!")
 
-#save plots using path
-file_path = (
-    Path.cwd()
-    / 'Transient behaviour'
-    / 'Transient behaviour.png'
+        #reaction axial length is controlled by eta parameter [0,1], and is discretized by 250
+        #nodes
+        i = n // 2 #change integer division to see results at different points in the reactor.
+
+        #initialize plots
+        fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+
+        for j in range(len(Da_lst)):
+        
+            sol = transient_solutions[j]
+
+            #slicing here comes from the offset between yi_dyn and 
+            #physical node (which includes IC at the start and BC at the end)
+            y1_transient = sol.y[i-1, :] 
+            y2_transient = sol.y[n-2+ (i-1),:]
+
+            Da = Da_lst[j] #for labelling 
+
+            #plotting for y1
+            axes[0].plot(
+                sol.t,
+                y1_transient,
+                label=rf"$Da={Da:.3f}$"
+            )
+
+            axes[0].set_title(rf"$y_1(\eta,\tau)$ at $\eta={eta[i]:.2f}$")
+            axes[0].set_ylabel(r"$y_1$")
+            axes[0].set_xlabel(r"$\tau$")
+
+            #plotting for y2
+            axes[1].plot(
+                sol.t,
+                y2_transient,
+                label=rf"$Da={Da:.3f}$"
+            )
+
+            axes[1].set_title(rf"$y_2(\eta,\tau)$ at $\eta={eta[i]:.2f}$")
+            axes[1].set_ylabel(r"$y_2$")
+            axes[1].set_xlabel(r"$\tau$")
+            
+        #save plots using path
+        file_path = (
+            Path.cwd()
+            / 'Transient behaviour'
+            / 'Transient behaviour.png'
+        )
+
+        fig.legend(
+        bbox_to_anchor=(0.5, 0.02),
+        loc='lower center',
+        ncol=5
 )
 
-plt.savefig(file_path, dpi=300, bbox_inches='tight', transparent=False)
+        fig.tight_layout(rect=(0, 0.25, 1, 1))
+
+        plt.savefig(
+            file_path,
+            dpi=300,
+            bbox_inches='tight',
+            transparent=False
+        )
+
+system(check_err=False)
+
+
+    
+
 

@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-# --- Constants ---
+#constants
 Pem = 5
 Peh = 5
 gam = 25
@@ -13,16 +13,16 @@ n = 250
 eta = np.linspace(0, 1, n)
 dx = eta[1] - eta[0]
 
-# --- Residuals ---
+#residuals
 def R(y, Da):
     R_vec = np.zeros(2*n)
-    # Boundary conditions
+    #Boundary conditions
     R_vec[0] = y[0] - 1.0
     R_vec[n] = y[n] - 1.0
     R_vec[n-1] = (y[n-2] - y[n-1])/dx
     R_vec[2*n-1] = (y[2*n-2] - y[2*n-1])/dx
 
-    # Interior nodes
+    #Interior nodes
     for i in range(1, n-1):
         R_vec[i] = (1/Pem)*(y[i+1]-2*y[i]+y[i-1])/dx**2 - (y[i+1]-y[i-1])/(2*dx) \
                    - Da*y[i]*np.exp(gam - gam/y[n+i])
@@ -30,10 +30,10 @@ def R(y, Da):
                      - beta*(y[n+i]-yw) + B*Da*y[i]*np.exp(gam - gam/y[n+i])
     return R_vec
 
-# --- Jacobian of R ---
+#jacobian of R
 def jacobian_R(y, Da):
     J = np.zeros((2*n, 2*n))
-    # Boundary
+    #Boundary
     J[0,0] = 1.0
     J[n,n] = 1.0
     J[n-1,n-2] = 1/dx
@@ -53,7 +53,7 @@ def jacobian_R(y, Da):
         J[n+i,n+i+1] = 1/(Peh*dx**2) - 1/(2*dx)
     return J
 
-# --- dR/dDa ---
+#dR/dDa
 def dR_dDa(y):
     R_Da = np.zeros(2*n)
     for i in range(1,n-1):
@@ -61,7 +61,7 @@ def dR_dDa(y):
         R_Da[n+i] = B*y[i]*np.exp(gam - gam/y[n+i])
     return R_Da
 
-# --- Augmented system ---
+#Augmented system
 def F_aug(y, Da, y_k, Da_k, dot_y, dot_Da, delta_s):
     F = np.zeros(2*n+1)
     F[:2*n] = R(y, Da)
@@ -78,23 +78,23 @@ def jacobian_aug(y, Da, dot_y, dot_Da):
     JF[-1, -1] = dot_Da
     return JF
 
-# --- Tangent vector (robust using least-squares) ---
+#tangent vector (robust using least-squares)
 def compute_tangent(y, Da, prev_dot_y=None, prev_dot_Da=None):
     J_y = jacobian_R(y, Da)
     R_Da = dR_dDa(y)
     dot_Da = 1.0
     dot_y, _, _, _ = np.linalg.lstsq(J_y, -R_Da*dot_Da, rcond=None)
-    # Normalize
+    #Normalize
     norm = np.sqrt(np.dot(dot_y,dot_y) + dot_Da**2)
     dot_y /= norm
     dot_Da /= norm
-    # Maintain branch direction
+    #Maintain branch direction
     if prev_dot_y is not None and np.dot(dot_y, prev_dot_y) + dot_Da*prev_dot_Da < 0:
         dot_y = -dot_y
         dot_Da = -dot_Da
     return dot_y, dot_Da
 
-# --- Continuation parameters ---
+#Continuation parameters
 delta_s = 1e-3
 Da_min = 0.1
 Da_max = 0.3
@@ -110,7 +110,7 @@ branch_Da = []
 
 prev_dot_y = None 
 prev_dot_Da = None 
-max_iterations = 10000  # max iteration safeguard
+max_iterations = 10000  #max iteration safeguard
 iteration_count = 0
 
 try:
@@ -120,15 +120,15 @@ try:
             print(f"Da_k exceeded maximum ({Da_k}). Stopping iteration.")
             break
 
-        # --- Compute tangent ---
+        #Compute tangent
         dot_y, dot_Da = compute_tangent(y_k, Da_k, prev_dot_y, prev_dot_Da)
         prev_dot_y, prev_dot_Da = dot_y.copy(), dot_Da
 
-        # --- Predictor ---
+        #Predictor
         y_pred = y_k + delta_s*dot_y
         Da_pred = Da_k + delta_s*dot_Da
 
-        # --- Corrector (Newton-Raphson) ---
+        #Corrector NR
         y_corr = y_pred.copy()
         Da_corr = Da_pred
         for it in range(100):
@@ -136,7 +136,7 @@ try:
             if np.linalg.norm(F) < 1e-8:
                 break
             JF = jacobian_aug(y_corr, Da_corr, dot_y, dot_Da)
-            # Damped Newton
+            #damped Newton
             delta = np.linalg.solve(JF, -F)
             lambda_factor = 0.3
             y_corr += lambda_factor*delta[:2*n]
@@ -145,11 +145,11 @@ try:
         branch_y.append(y_corr.copy())
         branch_Da.append(Da_corr)
 
-        # --- Log current Da ---
+        #log current Da
         with open("continuation_backup.txt", "a") as f:
             f.write(f"{Da_corr}\n")
 
-        # --- Update for next step ---
+        #update for next step
         y_k = y_corr
         Da_k = Da_corr
         print(f"Da_k = {Da_k:.6f}")
@@ -160,20 +160,20 @@ except KeyboardInterrupt:
     np.save("saved_branch_Da.npy", branch_Da)
     print("Results saved.")
 
-    # ---- SAFEGUARD / LOGGING ---- 
+    #safeguard + logging 
     with open("continuation_backup.txt", "a") as f:
         f.write(f"{Da_corr}\n")  #type: ignore
 
-        # Update for next step 
+        #Update for next step 
         y_k = y_corr #type: ignore
         Da_k = Da_corr #type: ignore
         print(f"Da_k = {Da_k:.6f}") 
 
-# --- Convert to arrays --- 
+#Convert to arrays
 branch_y = np.array(branch_y) 
 branch_Da = np.array(branch_Da) 
 
-# --- Plot y1 and y2 along branch --- 
+#Plot y1 and y2 along branch
 plt.figure() 
 for i in range(0, len(branch_y), max(1,len(branch_y)//20)): 
     plt.plot(eta, branch_y[i,:n], label=f'Da={branch_Da[i]:.3f}') 
@@ -192,7 +192,7 @@ plt.title('y2 along solution branch')
 plt.legend() 
 plt.show() 
 
-# --- Bifurcation diagram at eta=1 --- 
+#Bifurcation diagram at eta=1
 plt.figure() 
 plt.plot(branch_Da, branch_y[:, n-1], label='y1(eta=1)')
 plt.plot(branch_Da, branch_y[:, 2*n-1], label='y2(eta=1)')
